@@ -276,7 +276,7 @@ def position_sizer(method,signals,ohlc,portfolio):
             high = max(portfolio.balance)
             
             # Min: 20 day (lokal) equity curve low
-             x_day_low = min(portfolio.balance[-20:])
+            x_day_low = min(portfolio.balance[-20:])
             
             # For periods where we hold no positions and equity curve stays unchanged 
             if(high == x_day_low): return signals*0.1
