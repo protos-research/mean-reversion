@@ -2,7 +2,7 @@
 import sqlalchemy as sql
 import pandas as pd
 from datetime import timedelta
-
+import numpy as np
 
 
 def load_fundamental_data(fundamental,tickers,start_date,end_date):
@@ -320,10 +320,9 @@ def box_it(portfolio, ohlc, signals,param):
 def execute_target_allocation(portfolio,target_alloc,ohlc,spread):
     
     for ticker in target_alloc.index:
-        if(target_alloc[ticker] != 0):
+        if(target_alloc[ticker] != np.float(0) and ~np.isnan(target_alloc[ticker])):
             portfolio.positions[ticker] += target_alloc[ticker]
 
-    
     new_balance = portfolio.balance[-1] - abs((ohlc[3].iloc[-1]*portfolio.positions*spread).sum())
     
     portfolio.balance.append(new_balance)
@@ -348,7 +347,8 @@ class Portfolio(object):
      
     def __init__(self, ohlc,tickers,data,parameters, strategies):
         self.balance = [100]
-        self.positions = get_signals(strategies,[i.iloc[:1] for i in ohlc],data,parameters)*0
+        data = [np.float(0) for ticker in tickers]
+        self.positions = pd.Series(data=data, index=tickers, name=ohlc[3].iloc[-1].name)
         self.boxes = {i:{} for i in tickers}
         
 
