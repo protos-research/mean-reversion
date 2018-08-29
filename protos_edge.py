@@ -5,42 +5,80 @@ from datetime import timedelta
 import numpy as np
 
 
-def load_fundamental_data(fundamental,tickers,start_date,end_date):
+def load_nvx(nvx,tickers,start_date,end_date):
+##############################################
+#
+#   Loads Data for Fundamental Value Ratios: 
+#   
+#   nvx
+#   'nvt': Network Value (Marketcap) to Transaction Volume
+#   'nvv': Network Value (Marketcap) to Trading Volume
+#   'nva': Network Value (Marketcap) to Active Addresses
+#   'metcalfe': Network Value (Marketcap) to (Active Addresses)^2
+#
+#   tickers 
+#   List of Tickers to get Ratios for.
+#   ['ticker1','ticker2']
+#   Complete List of possible tickers: 
+#
+#   start_date, end_date
+#   'YYYY-MM-DD' 
+#   Example: '2018-01-01'
+#
+#   Returns a Pandas Dataframe.
+#   Missing Values = 'NaN'
+#
+##############################################
     
     ## Load Data:
     
     tickers = ['Date'] + tickers
     ticker_str = ', '.join("`{}`".format(ticker) for ticker in tickers)
     
-    engine = sql.create_engine('mysql+pymysql://protos-public:protos-public@google-sheet-data.cfyqhzfdz93r.eu-west-1.rds.amazonaws.com:3306/public')
-            
-    if(fundamental == 'nva'):
-        data = pd.read_sql("Select " + str(ticker_str) + " From nva", con=engine)
-    if(fundamental == 'nvt'):
-        data = pd.read_sql("Select " + str(ticker_str) + " From nvt", con=engine)
-    if(fundamental == 'nvv'):
-        data = pd.read_sql("Select " + str(ticker_str) + " From nvv", con=engine)
+    engine = sql.create_engine('mysql+pymysql://protos-public:protos-public@google-sheet-data.cfyqhzfdz93r.eu-west-1.rds.amazonaws.com:3306/public')     
+        
+    data = pd.read_sql("Select " + str(ticker_str) + " From " + str(nvx), con=engine)
         
     ## Clean Data:
         
-        data.set_index('Date', inplace=True)
-        data.index = pd.to_datetime(data.index)
-        date_filter = (data.index >= start_date) & (data.index <= end_date)
-        data = data[date_filter]
-        # frequency_filter = data['Date'] == ...
-        # price = price[frequency_filter]
-        data.fillna("NaN")
-        try:
-            data = data.apply(lambda x: x.str.replace(',',''))
-        except: pass
-        data = data.apply(pd.to_numeric, errors='coerce')
+    data.set_index('Date', inplace=True)
+    data.index = pd.to_datetime(data.index)
+    date_filter = (data.index >= start_date) & (data.index <= end_date)
+    data = data[date_filter]
+    # frequency_filter = data['Date'] == ...
+    # price = price[frequency_filter]
+    data.fillna("NaN")
+    
+    try:
+        data = data.apply(lambda x: x.str.replace(',',''))
+    except: pass
+
+    data = data.apply(pd.to_numeric, errors='coerce')
         
-    return data    
-    
-    
+    return data   
     
 
 def load_ohlc(tickers,start_date,end_date):
+##############################################
+#
+#   Loads Open, High, Low, Close Price Data:
+#   
+#   tickers 
+#   List of Tickers to get Ratios for.
+#   ['ticker1','ticker2']
+#   Complete List of possible tickers: 
+#
+#   start_date, end_date
+#   'YYYY-MM-DD' 
+#   Example: '2018-01-01'
+#
+#   Returns a List of Pandas Dataframes.
+#   ohlc[0]: Open Dataframe
+#   ohlc[1]: High Dataframe
+#   ohlc[2]: Low Dataframe
+#   ohlc[3]: Close Dataframe
+#
+##############################################
     
     ## Load Data:
     
@@ -77,6 +115,30 @@ def load_ohlc(tickers,start_date,end_date):
 
 
 def get_signals(strategies,ohlc,data,parameters):
+##############################################
+#
+#   Get Signals for Trading Strategies:
+#   
+#   strategy
+#   'mean-reversion': Buy Low, Sell High
+#   
+#   parameters
+#   Dict of Parameters for the chosen Strategy
+#   *See mean_reversion()
+#   
+#   data
+#   Fundamental Value Ratio as a Dataframe (from load_nvx())
+#   
+#   ohlc
+#   List of Price Dataframes
+#   ohlc[0]: Open 
+#   ohlc[1]: High 
+#   ohlc[2]: Low 
+#   ohlc[3]: Close 
+#   
+#   Returns a Signal for every ticker
+#
+##############################################
     
     for strategy in strategies:
         
@@ -87,6 +149,32 @@ def get_signals(strategies,ohlc,data,parameters):
 
 
 def mean_reversion(ohlc,parameters):
+##############################################
+#
+#   Get Signals for Mean Reversion Strategy:
+#
+#   Uses Bollinger Bands to generate Mean Reversion Signals
+#   
+#   parameters
+#   Dict of Parameters for the Bollinger Bands
+#   {'n_day_lb':6,'k':2.2}
+#   n_day_lb: Lookback period in days to calculate moving average standard_deviations over
+#   k: Upper and Lower Bollinger Band are k-times standard deviations away from the moving average
+#   
+#   This implementation generates a signals only when the price has exceeded the...
+#   ... Bollinger Band for 2 days in a row 
+#   
+#   
+#   ohlc
+#   List of Price Dataframes
+#   ohlc[0]: Open 
+#   ohlc[1]: High 
+#   ohlc[2]: Low 
+#   ohlc[3]: Close 
+#   
+#   Returns a Signal for every ticker
+#
+##############################################
     
     bollinger_bands = get_indicator('bollinger-bands',ohlc,parameters)
     #stochastic = get_indicator('stochastic',ohlc,parameters)
@@ -318,6 +406,32 @@ def box_it(portfolio, ohlc, signals,param):
     
     
 def execute_target_allocation(portfolio,target_alloc,ohlc,spread):
+##############################################
+#
+#   Executes Target Allocation and adds to / removes from the Portfolios Positions
+#
+#   portfolio
+#   Portfolio Class Instance
+#   portfolio.balance: Current Portfolio Balance
+#   portfolio.positions: Current Portfolio Positions
+#
+#   target_alloc
+#   Target Allocation for every Ticker
+#
+#   ohlc
+#   List of Price Dataframes
+#   ohlc[0]: Open 
+#   ohlc[1]: High 
+#   ohlc[2]: Low 
+#   ohlc[3]: Close 
+#
+#   spread
+#   Spread above/below market prices that has to be paid when executing trades
+#   spread*price*trading_quantity gets subtracted from the portfolio balance
+#
+#   Returns Portfolio with updated Positions and Balance
+#
+##############################################
     
     for ticker in target_alloc.index:
         if(target_alloc[ticker] != np.float(0) and ~np.isnan(target_alloc[ticker])):
@@ -331,6 +445,13 @@ def execute_target_allocation(portfolio,target_alloc,ohlc,spread):
     
 
 def update_balance(portfolio,ohlc):
+##############################################
+#    
+#   Updates Portfolio Balance when Prices change on the Next Day    
+#    
+#   Returns Portfolio with updates Balance
+#
+##############################################
     
     new_balance = portfolio.balance[-1] + (portfolio.positions*(
             ohlc[3].iloc[-1] - ohlc[3].iloc[ohlc[3].shape[0]-2])).sum()
@@ -344,20 +465,20 @@ def update_balance(portfolio,ohlc):
   
     
 class Portfolio(object):
+##############################################
+#    
+#   Portfolio Class
+#    
+#   self.balance: List with the current portfolio balance, which gets ...
+#                 ...appended (updated) with update_balance()
+#   self.positions: Pandas Series with Positions (Quantity) for every Ticker
+#   self.boxes: Boxes with Stop-Loss instructions (price, time) for every active position
+#
+##############################################
      
-    def __init__(self, ohlc,tickers,data,parameters, strategies):
+    def __init__(self, ohlc,tickers):
         self.balance = [100]
         data = [np.float(0) for ticker in tickers]
-        self.positions = pd.Series(data=data, index=tickers, name=ohlc[3].iloc[-1].name)
-        self.boxes = {i:{} for i in tickers}
-        
-
-        
-
-    
-    
-    
-    
-    
-    
+        self.positions = pd.Series(data=data, index=tickers, name=ohlc[3].iloc[0].name)
+        self.boxes = {i:{} for i in tickers} 
     
